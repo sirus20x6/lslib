@@ -182,20 +182,25 @@ enum class SerializationKind {
 struct MemberDefinition {
     std::string name;
     MemberType type;
-    uint32_t offset;
+    StructReference definition;  // Pointer to struct definition for complex types
     uint32_t arraySize;
-    struct StructDefinition* structDef;
     uint32_t extra[3];
+    uint32_t unknown;
+
+    bool IsValid() const { return type != MemberType::None; }
 };
 
 struct StructDefinition {
     std::vector<MemberDefinition> members;
-    uint32_t size;
+
+    // Calculate size based on members and alignment
+    uint32_t CalculateSize() const;
 };
 
 struct StructReference {
-    uint32_t offset;
-    StructDefinition* definition = nullptr;
+    uint64_t offset = 0;
+
+    bool IsValid() const { return offset != 0; }
 };
 
 } // namespace gr2

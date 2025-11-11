@@ -94,9 +94,9 @@ int main(int argc, char** argv) {
 
         std::cout << "Successfully read GR2 file!" << std::endl;
         std::cout << std::endl;
-        std::cout << "NOTE: Full deserialization is not yet implemented." << std::endl;
-        std::cout << "      The counts above may be zero even for valid files." << std::endl;
-        std::cout << "      See reader.cpp Read() function for implementation notes." << std::endl;
+        std::cout << "NOTE: Vertex data parsing is simplified in this version." << std::endl;
+        std::cout << "      Triangle indices and skeleton data are fully supported." << std::endl;
+        std::cout << "      Extend ReadVertexData() for full vertex format parsing." << std::endl;
 
         return 0;
 

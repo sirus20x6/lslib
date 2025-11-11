@@ -82,4 +82,14 @@ Magic::Format Magic::FormatFromSignature(const uint8_t* sig) {
     return Format::Unknown;
 }
 
+// ============================================================================
+// StructDefinition Implementation
+// ============================================================================
+
+uint32_t StructDefinition::CalculateSize() const {
+    // Simple size calculation - in reality this would need proper alignment
+    // For now, return 0 as we don't strictly need this for reading
+    return 0;
+}
+
 } // namespace gr2

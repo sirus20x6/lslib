@@ -2,6 +2,7 @@
 #include <cstring>
 #include <algorithm>
 #include <stdexcept>
+#include <sstream>
 
 namespace gr2 {
 
@@ -16,11 +17,9 @@ float HalfToFloat(uint16_t half) {
 
     if (exponent == 0) {
         if (mantissa == 0) {
-            // Zero
             uint32_t result = sign << 31;
             return *reinterpret_cast<float*>(&result);
         } else {
-            // Denormalized number
             exponent = 1;
             while ((mantissa & 0x400) == 0) {
                 mantissa <<= 1;
@@ -29,7 +28,6 @@ float HalfToFloat(uint16_t half) {
             mantissa &= 0x3FF;
         }
     } else if (exponent == 31) {
-        // Infinity or NaN
         uint32_t result = (sign << 31) | 0x7F800000 | (mantissa << 13);
         return *reinterpret_cast<float*>(&result);
     }
@@ -77,44 +75,23 @@ Vector3 NormalToByte(const Vector3& normal) {
 
 void QTangentToTBN(uint16_t qx, uint16_t qy, uint16_t qz, uint16_t qw,
                    Vector3& tangent, Vector3& binormal, Vector3& normal) {
-    // Convert from 16-bit unsigned to normalized float
     float x = (static_cast<float>(qx) / 32767.5f) - 1.0f;
     float y = (static_cast<float>(qy) / 32767.5f) - 1.0f;
     float z = (static_cast<float>(qz) / 32767.5f) - 1.0f;
     float w = (static_cast<float>(qw) / 32767.5f) - 1.0f;
 
-    // Normalize quaternion
     float len = std::sqrt(x * x + y * y + z * z + w * w);
     if (len > 0.0001f) {
-        x /= len;
-        y /= len;
-        z /= len;
-        w /= len;
+        x /= len; y /= len; z /= len; w /= len;
     }
 
-    // Convert quaternion to rotation matrix
     float xx = x * x, yy = y * y, zz = z * z;
     float xy = x * y, xz = x * z, yz = y * z;
     float wx = w * x, wy = w * y, wz = w * z;
 
-    // Tangent, Binormal, Normal from rotation matrix
-    tangent = Vector3(
-        1.0f - 2.0f * (yy + zz),
-        2.0f * (xy + wz),
-        2.0f * (xz - wy)
-    );
-
-    binormal = Vector3(
-        2.0f * (xy - wz),
-        1.0f - 2.0f * (xx + zz),
-        2.0f * (yz + wx)
-    );
-
-    normal = Vector3(
-        2.0f * (xz + wy),
-        2.0f * (yz - wx),
-        1.0f - 2.0f * (xx + yy)
-    );
+    tangent = Vector3(1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy));
+    binormal = Vector3(2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx));
+    normal = Vector3(2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy));
 }
 
 // ============================================================================
@@ -122,20 +99,14 @@ void QTangentToTBN(uint16_t qx, uint16_t qy, uint16_t qz, uint16_t qw,
 // ============================================================================
 
 std::vector<uint8_t> NullDecompressor::Decompress(
-    int format,
-    const uint8_t* compressed,
-    size_t compressedSize,
-    size_t decompressedSize,
-    int stop0, int stop1, int stop2) {
+    int format, const uint8_t*, size_t, size_t, int, int, int) {
     throw ParsingException(
         "Compressed GR2 file detected but no decompressor available. "
         "Files with Oodle compression require granny2.dll support.");
 }
 
 std::vector<uint8_t> NullDecompressor::Decompress4(
-    const uint8_t* compressed,
-    size_t compressedSize,
-    size_t decompressedSize) {
+    const uint8_t*, size_t, size_t) {
     throw ParsingException(
         "Compressed GR2 file detected but no decompressor available. "
         "Files with Oodle compression require granny2.dll support.");
@@ -150,8 +121,7 @@ GR2Reader::GR2Reader(std::istream& stream)
     , decompressor_(std::make_shared<NullDecompressor>()) {
 }
 
-GR2Reader::~GR2Reader() {
-}
+GR2Reader::~GR2Reader() = default;
 
 void GR2Reader::SetDecompressor(std::shared_ptr<IDecompressor> decompressor) {
     decompressor_ = decompressor;
@@ -162,7 +132,6 @@ void GR2Reader::SetDecompressor(std::shared_ptr<IDecompressor> decompressor) {
 // ============================================================================
 
 void GR2Reader::ReadBytes(uint8_t* buffer, size_t count) {
-    // Read from uncompressed buffer if available
     if (!uncompressedData_.empty()) {
         if (uncompressedPos_ + count > uncompressedData_.size()) {
             throw ParsingException("Read past end of uncompressed data");
@@ -183,24 +152,33 @@ uint8_t GR2Reader::ReadUInt8() {
     return value;
 }
 
+int8_t GR2Reader::ReadInt8() {
+    return static_cast<int8_t>(ReadUInt8());
+}
+
 uint16_t GR2Reader::ReadUInt16() {
     uint16_t value;
     ReadBytes(reinterpret_cast<uint8_t*>(&value), 2);
-    // TODO: Handle endianness if needed
     return value;
+}
+
+int16_t GR2Reader::ReadInt16() {
+    return static_cast<int16_t>(ReadUInt16());
 }
 
 uint32_t GR2Reader::ReadUInt32() {
     uint32_t value;
     ReadBytes(reinterpret_cast<uint8_t*>(&value), 4);
-    // TODO: Handle endianness if needed
     return value;
+}
+
+int32_t GR2Reader::ReadInt32() {
+    return static_cast<int32_t>(ReadUInt32());
 }
 
 uint64_t GR2Reader::ReadUInt64() {
     uint64_t value;
     ReadBytes(reinterpret_cast<uint8_t*>(&value), 8);
-    // TODO: Handle endianness if needed
     return value;
 }
 
@@ -210,26 +188,12 @@ float GR2Reader::ReadFloat() {
     return value;
 }
 
-std::string GR2Reader::ReadString() {
-    // Read null-terminated string from current position
-    // In GR2, strings are stored as pointers that have been relocated
-    uint32_t stringOffset = ReadUInt32();
-    if (stringOffset == 0) return "";
-
-    // Save current position
-    uint32_t savedPos = Tell();
-
-    // Seek to string and read it
-    Seek(stringOffset);
+std::string GR2Reader::ReadStringDirect() {
     std::string result;
     char ch;
     while ((ch = static_cast<char>(ReadUInt8())) != '\0') {
         result += ch;
     }
-
-    // Restore position
-    Seek(savedPos);
-
     return result;
 }
 
@@ -300,7 +264,6 @@ SectionHeader GR2Reader::ReadSectionHeader() {
     header.numRelocations = ReadUInt32();
     header.mixedMarshallingDataOffset = ReadUInt32();
     header.numMixedMarshallingData = ReadUInt32();
-
     return header;
 }
 
@@ -312,11 +275,55 @@ SectionReference GR2Reader::ReadSectionReference() {
 }
 
 // ============================================================================
+// Reference Reading
+// ============================================================================
+
+RelocatableReference GR2Reader::ReadReference() {
+    RelocatableReference ref;
+    if (magic_.Is32Bit()) {
+        ref.offset = ReadUInt32();
+    } else {
+        ref.offset = ReadUInt64();
+    }
+    return ref;
+}
+
+StructReference GR2Reader::ReadStructReference() {
+    StructReference ref;
+    if (magic_.Is32Bit()) {
+        ref.offset = ReadUInt32();
+    } else {
+        ref.offset = ReadUInt64();
+    }
+    return ref;
+}
+
+StringReference GR2Reader::ReadStringReference() {
+    StringReference ref;
+    if (magic_.Is32Bit()) {
+        ref.offset = ReadUInt32();
+    } else {
+        ref.offset = ReadUInt64();
+    }
+    return ref;
+}
+
+ArrayReference GR2Reader::ReadArrayReference() {
+    ArrayReference ref;
+    ref.size = ReadUInt32();
+    if (magic_.Is32Bit()) {
+        ref.offset = ReadUInt32();
+    } else {
+        ref.offset = ReadUInt64();
+    }
+    return ref;
+}
+
+// ============================================================================
 // Section Processing
 // ============================================================================
 
 void GR2Reader::UncompressStream() {
-    // Calculate total uncompressed size
     size_t totalSize = 0;
     for (const auto& section : sections_) {
         totalSize += section.header.uncompressedSize;
@@ -328,35 +335,24 @@ void GR2Reader::UncompressStream() {
     for (auto& section : sections_) {
         const auto& hdr = section.header;
 
-        // Read section data from input stream
         std::vector<uint8_t> sectionContents(hdr.compressedSize);
         inputStream_.seekg(hdr.offsetInFile);
         inputStream_.read(reinterpret_cast<char*>(sectionContents.data()), hdr.compressedSize);
 
-        // Update section offset to point into uncompressed buffer
         const_cast<SectionHeader&>(section.header).offsetInFile = static_cast<uint32_t>(currentPos);
 
         if (hdr.compression == 0) {
-            // Uncompressed - copy directly
             std::memcpy(&uncompressedData_[currentPos], sectionContents.data(), hdr.compressedSize);
         } else if (hdr.uncompressedSize > 0) {
-            // Compressed - decompress
             std::vector<uint8_t> decompressed;
 
             if (hdr.compression == 4) {
                 decompressed = decompressor_->Decompress4(
-                    sectionContents.data(),
-                    hdr.compressedSize,
-                    hdr.uncompressedSize);
+                    sectionContents.data(), hdr.compressedSize, hdr.uncompressedSize);
             } else {
                 decompressed = decompressor_->Decompress(
-                    hdr.compression,
-                    sectionContents.data(),
-                    hdr.compressedSize,
-                    hdr.uncompressedSize,
-                    hdr.first16bit,
-                    hdr.first8bit,
-                    hdr.uncompressedSize);
+                    hdr.compression, sectionContents.data(), hdr.compressedSize,
+                    hdr.uncompressedSize, hdr.first16bit, hdr.first8bit, hdr.uncompressedSize);
             }
 
             std::memcpy(&uncompressedData_[currentPos], decompressed.data(), decompressed.size());
@@ -371,30 +367,566 @@ void GR2Reader::UncompressStream() {
 void GR2Reader::ReadSectionRelocations(Section& section) {
     if (section.header.numRelocations == 0) return;
 
-    // Read relocation table
     inputStream_.seekg(section.header.relocationsOffset);
 
     for (uint32_t i = 0; i < section.header.numRelocations; i++) {
         uint32_t offsetInSection = ReadUInt32();
         SectionReference ref = ReadSectionReference();
 
-        // Calculate target address
         uint32_t targetAddress = sections_[ref.section].header.offsetInFile + ref.offset;
-
-        // Fix up pointer in uncompressed data
         uint32_t ptrLocation = section.header.offsetInFile + offsetInSection;
         std::memcpy(&uncompressedData_[ptrLocation], &targetAddress, 4);
     }
 }
 
 void GR2Reader::ReadSectionMixedMarshallingRelocations(Section& section) {
-    // Mixed marshalling relocations for endian swapping
-    // For now, skip if not needed (little-endian files)
     if (magic_.IsLittleEndian()) {
         return;
     }
-
     // TODO: Implement endian swapping if needed for big-endian files
+}
+
+// ============================================================================
+// Type System
+// ============================================================================
+
+MemberDefinition GR2Reader::ReadMemberDefinition() {
+    MemberDefinition member;
+
+    int32_t typeId = ReadInt32();
+    if (typeId < 0 || typeId > static_cast<int>(MemberType::Max)) {
+        member.type = MemberType::None;
+        return member;
+    }
+
+    member.type = static_cast<MemberType>(typeId);
+    auto nameRef = ReadStringReference();
+    if (nameRef.IsValid()) {
+        member.name = ReadString(nameRef);
+    }
+
+    member.definition = ReadStructReference();
+    member.arraySize = ReadUInt32();
+
+    for (int i = 0; i < 3; i++) {
+        member.extra[i] = ReadUInt32();
+    }
+
+    if (magic_.Is32Bit()) {
+        member.unknown = ReadUInt32();
+    } else {
+        member.unknown = static_cast<uint32_t>(ReadUInt64());
+    }
+
+    return member;
+}
+
+StructDefinition* GR2Reader::ReadStructDefinition() {
+    auto def = std::make_unique<StructDefinition>();
+
+    while (true) {
+        auto member = ReadMemberDefinition();
+        if (member.IsValid()) {
+            def->members.push_back(member);
+        } else {
+            break;
+        }
+    }
+
+    return def.release();
+}
+
+StructDefinition* GR2Reader::GetOrReadStructDefinition(uint32_t offset) {
+    auto it = types_.find(offset);
+    if (it != types_.end()) {
+        return it->second.get();
+    }
+
+    SavePosition();
+    Seek(offset);
+    auto def = ReadStructDefinition();
+    types_[offset] = std::unique_ptr<StructDefinition>(def);
+    RestorePosition();
+
+    return def;
+}
+
+// ============================================================================
+// String Reading
+// ============================================================================
+
+std::string GR2Reader::ReadString(const StringReference& ref) {
+    if (!ref.IsValid()) return "";
+
+    SavePosition();
+    Seek(ref.offset);
+    std::string result = ReadStringDirect();
+    RestorePosition();
+
+    return result;
+}
+
+// ============================================================================
+// Transform Reading
+// ============================================================================
+
+Transform GR2Reader::ReadTransform() {
+    Transform transform;
+
+    transform.flags = ReadUInt32();
+
+    transform.translation.x = ReadFloat();
+    transform.translation.y = ReadFloat();
+    transform.translation.z = ReadFloat();
+
+    transform.rotation.x = ReadFloat();
+    transform.rotation.y = ReadFloat();
+    transform.rotation.z = ReadFloat();
+    transform.rotation.w = ReadFloat();
+
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            transform.scaleShear[i][j] = ReadFloat();
+        }
+    }
+
+    return transform;
+}
+
+// ============================================================================
+// Generic Struct Member Reading
+// ============================================================================
+
+void GR2Reader::ReadStructMembers(
+    StructDefinition* def,
+    const std::function<void(const MemberDefinition&)>& handler) {
+
+    for (const auto& member : def->members) {
+        handler(member);
+    }
+}
+
+// ============================================================================
+// Main Read Function
+// ============================================================================
+
+std::shared_ptr<Root> GR2Reader::Read() {
+    magic_ = ReadMagic();
+    header_ = ReadHeader();
+
+    if (magic_.format != Magic::Format::LittleEndian32 &&
+        magic_.format != Magic::Format::LittleEndian64) {
+        throw ParsingException("Only little-endian GR2 files are supported");
+    }
+
+    sections_.resize(header_.numSections);
+    for (uint32_t i = 0; i < header_.numSections; i++) {
+        sections_[i].header = ReadSectionHeader();
+    }
+
+    UncompressStream();
+
+    for (auto& section : sections_) {
+        ReadSectionRelocations(section);
+    }
+
+    if (!magic_.IsLittleEndian()) {
+        for (auto& section : sections_) {
+            ReadSectionMixedMarshallingRelocations(section);
+        }
+    }
+
+    uint32_t rootTypeOffset = ResolveReference(header_.rootType);
+    GetOrReadStructDefinition(rootTypeOffset);
+
+    Seek(header_.rootNode);
+    return ReadRoot();
+}
+
+// ============================================================================
+// Root Deserialization
+// ============================================================================
+
+std::shared_ptr<Root> GR2Reader::ReadRoot() {
+    auto root = Root::CreateEmpty();
+    root->gr2Tag = header_.tag;
+
+    uint32_t rootTypeOffset = ResolveReference(header_.rootType);
+    auto rootDef = GetOrReadStructDefinition(rootTypeOffset);
+
+    ReadStructMembers(rootDef, [&](const MemberDefinition& member) {
+        if (member.name == "Skeletons") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->skeletons = ReadArrayOfReferences<Skeleton>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadSkeleton(def); });
+            }
+        }
+        else if (member.name == "Meshes") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->meshes = ReadArrayOfReferences<Mesh>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadMesh(def); });
+            }
+        }
+        else if (member.name == "Materials") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->materials = ReadArrayOfReferences<Material>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadMaterial(def); });
+            }
+        }
+        else if (member.name == "Textures") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->textures = ReadArrayOfReferences<Texture>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadTexture(def); });
+            }
+        }
+        else if (member.name == "VertexDatas") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->vertexDatas = ReadArrayOfReferences<VertexData>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadVertexData(def); });
+            }
+        }
+        else if (member.name == "TriTopologies") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->triTopologies = ReadArrayOfReferences<TriTopology>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadTriTopology(def); });
+            }
+        }
+        else if (member.name == "Models") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                root->models = ReadArrayOfReferences<Model>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadModel(def); });
+            }
+        }
+        else {
+            // Skip unknown members - read the data to advance position
+            switch (member.type) {
+                case MemberType::String: ReadStringReference(); break;
+                case MemberType::Reference: ReadReference(); break;
+                case MemberType::ArrayOfReferences: ReadArrayReference(); break;
+                case MemberType::ReferenceToArray:
+                case MemberType::ReferenceToVariantArray:
+                    ReadArrayReference();
+                    break;
+                case MemberType::Int32: ReadInt32(); break;
+                case MemberType::UInt32: ReadUInt32(); break;
+                case MemberType::Real32: ReadFloat(); break;
+                default: break;
+            }
+        }
+    });
+
+    return root;
+}
+
+// ============================================================================
+// Skeleton Deserialization
+// ============================================================================
+
+std::shared_ptr<Skeleton> GR2Reader::ReadSkeleton(StructDefinition* def) {
+    auto skeleton = std::make_shared<Skeleton>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "Name") {
+            auto str = ReadStringReference();
+            skeleton->name = ReadString(str);
+        }
+        else if (member.name == "Bones") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                skeleton->bones = ReadArrayOfReferences<Bone>(
+                    arrayRef,
+                    GetOrReadStructDefinition(member.definition.offset),
+                    [this](StructDefinition* def) { return ReadBone(def); });
+            }
+        }
+        else if (member.name == "LODType") {
+            skeleton->lodType = ReadInt32();
+        }
+        else {
+            // Skip unknown
+            if (member.type == MemberType::String) ReadStringReference();
+            else if (member.type == MemberType::Int32) ReadInt32();
+        }
+    });
+
+    return skeleton;
+}
+
+// ============================================================================
+// Bone Deserialization
+// ============================================================================
+
+std::shared_ptr<Bone> GR2Reader::ReadBone(StructDefinition* def) {
+    auto bone = std::make_shared<Bone>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "Name") {
+            auto str = ReadStringReference();
+            bone->name = ReadString(str);
+        }
+        else if (member.name == "ParentIndex") {
+            bone->parentIndex = ReadInt32();
+        }
+        else if (member.name == "LocalTransform") {
+            bone->transform = ReadTransform();
+        }
+        else if (member.name == "InverseWorld4x4") {
+            for (int i = 0; i < 16; i++) {
+                bone->inverseWorldTransform[i] = ReadFloat();
+            }
+        }
+        else if (member.name == "LODError") {
+            bone->lodError = ReadInt32();
+        }
+        else {
+            // Skip
+            if (member.type == MemberType::String) ReadStringReference();
+            else if (member.type == MemberType::Int32) ReadInt32();
+            else if (member.type == MemberType::Transform) ReadTransform();
+        }
+    });
+
+    return bone;
+}
+
+// ============================================================================
+// Mesh, VertexData, TriTopology Deserialization (Simplified)
+// ============================================================================
+
+std::shared_ptr<Mesh> GR2Reader::ReadMesh(StructDefinition* def) {
+    auto mesh = std::make_shared<Mesh>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "Name") {
+            auto str = ReadStringReference();
+            mesh->name = ReadString(str);
+        }
+        else if (member.name == "PrimaryVertexData") {
+            auto ref = ReadReference();
+            if (ref.IsValid()) {
+                SavePosition();
+                Seek(ref);
+                mesh->primaryVertexData = ReadVertexData(
+                    GetOrReadStructDefinition(member.definition.offset));
+                RestorePosition();
+            }
+        }
+        else if (member.name == "PrimaryTopology") {
+            auto ref = ReadReference();
+            if (ref.IsValid()) {
+                SavePosition();
+                Seek(ref);
+                mesh->primaryTopology = ReadTriTopology(
+                    GetOrReadStructDefinition(member.definition.offset));
+                RestorePosition();
+            }
+        }
+        else {
+            // Skip other members for simplicity
+            if (member.type == MemberType::String) ReadStringReference();
+            else if (member.type == MemberType::Reference) ReadReference();
+            else if (member.type == MemberType::ArrayOfReferences) ReadArrayReference();
+        }
+    });
+
+    return mesh;
+}
+
+std::shared_ptr<VertexData> GR2Reader::ReadVertexData(StructDefinition* def) {
+    auto vertexData = std::make_shared<VertexData>();
+
+    // Simplified - just skip the data for now
+    // Full implementation would parse vertex formats and data
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.type == MemberType::Reference) ReadReference();
+        else if (member.type == MemberType::ArrayOfReferences) ReadArrayReference();
+        else if (member.type == MemberType::ReferenceToArray) ReadArrayReference();
+        else if (member.type == MemberType::Int32) ReadInt32();
+        else if (member.type == MemberType::UInt32) ReadUInt32();
+    });
+
+    return vertexData;
+}
+
+std::shared_ptr<TriTopology> GR2Reader::ReadTriTopology(StructDefinition* def) {
+    auto topology = std::make_shared<TriTopology>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "Indices") {
+            auto arrayRef = ReadArrayReference();
+            if (arrayRef.IsValid() && arrayRef.size > 0) {
+                SavePosition();
+                Seek(arrayRef.offset);
+                topology->indices.resize(arrayRef.size);
+                for (uint32_t i = 0; i < arrayRef.size; i++) {
+                    if (topology->bytesPerIndex == 2) {
+                        topology->indices[i] = ReadUInt16();
+                    } else {
+                        topology->indices[i] = ReadUInt32();
+                    }
+                }
+                RestorePosition();
+            }
+        }
+        else if (member.name == "BytesPerIndex") {
+            topology->bytesPerIndex = ReadInt32();
+        }
+        else {
+            if (member.type == MemberType::ReferenceToArray) ReadArrayReference();
+            else if (member.type == MemberType::Int32) ReadInt32();
+        }
+    });
+
+    return topology;
+}
+
+// ============================================================================
+// Material and Texture Deserialization
+// ============================================================================
+
+std::shared_ptr<Material> GR2Reader::ReadMaterial(StructDefinition* def) {
+    auto material = std::make_shared<Material>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "Name") {
+            auto str = ReadStringReference();
+            material->name = ReadString(str);
+        }
+        else {
+            if (member.type == MemberType::String) ReadStringReference();
+            else if (member.type == MemberType::Reference) ReadReference();
+            else if (member.type == MemberType::ArrayOfReferences) ReadArrayReference();
+        }
+    });
+
+    return material;
+}
+
+std::shared_ptr<Texture> GR2Reader::ReadTexture(StructDefinition* def) {
+    auto texture = std::make_shared<Texture>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "FileName") {
+            auto str = ReadStringReference();
+            texture->fileName = ReadString(str);
+        }
+        else if (member.name == "Name") {
+            auto str = ReadStringReference();
+            texture->name = ReadString(str);
+        }
+        else {
+            if (member.type == MemberType::String) ReadStringReference();
+        }
+    });
+
+    return texture;
+}
+
+// ============================================================================
+// Model Deserialization
+// ============================================================================
+
+std::shared_ptr<Model> GR2Reader::ReadModel(StructDefinition* def) {
+    auto model = std::make_shared<Model>();
+
+    ReadStructMembers(def, [&](const MemberDefinition& member) {
+        if (member.name == "Name") {
+            auto str = ReadStringReference();
+            model->name = ReadString(str);
+        }
+        else if (member.name == "InitialPlacement") {
+            model->initialPlacement = ReadTransform();
+        }
+        else {
+            if (member.type == MemberType::String) ReadStringReference();
+            else if (member.type == MemberType::Transform) ReadTransform();
+            else if (member.type == MemberType::Reference) ReadReference();
+            else if (member.type == MemberType::ArrayOfReferences) ReadArrayReference();
+        }
+    });
+
+    return model;
+}
+
+// ============================================================================
+// Array Reading Templates
+// ============================================================================
+
+template<typename T>
+std::vector<std::shared_ptr<T>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference& arrayRef,
+    StructDefinition* elementDef,
+    std::function<std::shared_ptr<T>(StructDefinition*)> readFunc) {
+
+    std::vector<std::shared_ptr<T>> result;
+
+    if (!arrayRef.IsValid() || arrayRef.size == 0) {
+        return result;
+    }
+
+    SavePosition();
+    Seek(arrayRef.offset);
+
+    // Read array of pointers
+    std::vector<RelocatableReference> refs(arrayRef.size);
+    for (uint32_t i = 0; i < arrayRef.size; i++) {
+        refs[i] = ReadReference();
+    }
+
+    // Follow each pointer and read the object
+    for (const auto& ref : refs) {
+        if (ref.IsValid()) {
+            Seek(ref);
+            result.push_back(readFunc(elementDef));
+        }
+    }
+
+    RestorePosition();
+    return result;
+}
+
+template<typename T>
+std::vector<std::shared_ptr<T>> GR2Reader::ReadReferenceToArray(
+    const ArrayReference& arrayRef,
+    StructDefinition* elementDef,
+    std::function<std::shared_ptr<T>(StructDefinition*)> readFunc) {
+
+    std::vector<std::shared_ptr<T>> result;
+
+    if (!arrayRef.IsValid() || arrayRef.size == 0) {
+        return result;
+    }
+
+    SavePosition();
+    Seek(arrayRef.offset);
+
+    for (uint32_t i = 0; i < arrayRef.size; i++) {
+        result.push_back(readFunc(elementDef));
+    }
+
+    RestorePosition();
+    return result;
 }
 
 // ============================================================================
@@ -407,120 +939,48 @@ void GR2Reader::Seek(const SectionReference& ref) {
 }
 
 void GR2Reader::Seek(uint32_t offset) {
-    if (!uncompressedData_.empty()) {
-        uncompressedPos_ = offset;
-    } else {
-        inputStream_.seekg(offset);
-    }
+    uncompressedPos_ = offset;
+}
+
+void GR2Reader::Seek(const RelocatableReference& ref) {
+    uncompressedPos_ = static_cast<size_t>(ref.offset);
 }
 
 uint32_t GR2Reader::Tell() const {
-    if (!uncompressedData_.empty()) {
-        return static_cast<uint32_t>(uncompressedPos_);
-    } else {
-        return static_cast<uint32_t>(inputStream_.tellg());
-    }
+    return static_cast<uint32_t>(uncompressedPos_);
 }
 
 uint32_t GR2Reader::ResolveReference(const SectionReference& ref) const {
     return sections_[ref.section].header.offsetInFile + ref.offset;
 }
 
-// ============================================================================
-// Main Read Function
-// ============================================================================
+void GR2Reader::SavePosition() {
+    positionStack_.push(Tell());
+}
 
-std::shared_ptr<Root> GR2Reader::Read() {
-    // Read magic and header
-    magic_ = ReadMagic();
-    header_ = ReadHeader();
-
-    if (magic_.format != Magic::Format::LittleEndian32 &&
-        magic_.format != Magic::Format::LittleEndian64) {
-        throw ParsingException("Only little-endian GR2 files are supported");
+void GR2Reader::RestorePosition() {
+    if (!positionStack_.empty()) {
+        Seek(positionStack_.top());
+        positionStack_.pop();
     }
-
-    // Read section headers
-    sections_.resize(header_.numSections);
-    for (uint32_t i = 0; i < header_.numSections; i++) {
-        sections_[i].header = ReadSectionHeader();
-    }
-
-    // Uncompress all sections
-    UncompressStream();
-
-    // Apply relocations
-    for (auto& section : sections_) {
-        ReadSectionRelocations(section);
-    }
-
-    // Apply mixed marshalling relocations if needed
-    if (!magic_.IsLittleEndian()) {
-        for (auto& section : sections_) {
-            ReadSectionMixedMarshallingRelocations(section);
-        }
-    }
-
-    // Read type definition for root
-    uint32_t rootTypeOffset = ResolveReference(header_.rootType);
-    ReadTypeDefinition(rootTypeOffset);
-
-    // Create and read root object
-    auto root = Root::CreateEmpty();
-    root->gr2Tag = header_.tag;
-
-    // NOTE: Full deserialization would require implementing the complete
-    // type system and recursive struct reading. This is a substantial
-    // amount of code (~1000+ lines) that would read the type definitions
-    // and use them to deserialize the Root structure.
-    //
-    // For a working implementation, you would need to:
-    // 1. Read and parse all type definitions
-    // 2. Recursively deserialize structures based on type info
-    // 3. Handle all MemberTypes (Reference, Array, String, etc.)
-    // 4. Convert vertex formats (QTangent, Half, Byte, etc.)
-    //
-    // This simplified version returns an empty root structure.
-    // See the C# implementation in LSLib/Granny/GR2/Reader.cs for the
-    // complete deserialization logic.
-
-    return root;
 }
 
-void GR2Reader::ReadTypeDefinition(uint32_t offset) {
-    // Type definition reading would go here
-    // This is complex and requires parsing the GR2 type system
-    // See LSLib/Granny/GR2/Reader.cs:ReadStructDefinition() for reference
-}
-
-StructDefinition* GR2Reader::GetTypeDefinition(uint32_t offset) {
-    auto it = types_.find(offset);
-    if (it != types_.end()) {
-        return &it->second;
-    }
-    return nullptr;
-}
-
-MemberDefinition GR2Reader::ReadMemberDefinition() {
-    MemberDefinition member;
-    // Read member definition from current position
-    // This would parse the member structure
-    return member;
-}
-
-void* GR2Reader::ReadStruct(StructDefinition* def, MemberType memberType,
-                            void* target, const std::string& targetMemberName) {
-    // Recursive struct reading would go here
-    return target;
-}
-
-void* GR2Reader::ReadStructInternal(StructDefinition* def, void* target) {
-    // Internal struct reading
-    return target;
-}
-
-void GR2Reader::ReadMember(const MemberDefinition& member, void* parentStruct) {
-    // Member reading based on type
-}
+// Explicit template instantiations
+template std::vector<std::shared_ptr<Skeleton>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<Skeleton>(StructDefinition*)>);
+template std::vector<std::shared_ptr<Bone>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<Bone>(StructDefinition*)>);
+template std::vector<std::shared_ptr<Mesh>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<Mesh>(StructDefinition*)>);
+template std::vector<std::shared_ptr<Material>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<Material>(StructDefinition*)>);
+template std::vector<std::shared_ptr<Texture>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<Texture>(StructDefinition*)>);
+template std::vector<std::shared_ptr<VertexData>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<VertexData>(StructDefinition*)>);
+template std::vector<std::shared_ptr<TriTopology>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<TriTopology>(StructDefinition*)>);
+template std::vector<std::shared_ptr<Model>> GR2Reader::ReadArrayOfReferences(
+    const ArrayReference&, StructDefinition*, std::function<std::shared_ptr<Model>(StructDefinition*)>);
 
 } // namespace gr2
