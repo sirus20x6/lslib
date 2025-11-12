@@ -1,4 +1,5 @@
 #include "gr2/reader.h"
+#include "gr2/vertex_format.h"
 #include <cstring>
 #include <algorithm>
 #include <stdexcept>
@@ -756,14 +757,45 @@ std::shared_ptr<Mesh> GR2Reader::ReadMesh(StructDefinition* def) {
 std::shared_ptr<VertexData> GR2Reader::ReadVertexData(StructDefinition* def) {
     auto vertexData = std::make_shared<VertexData>();
 
-    // Simplified - just skip the data for now
-    // Full implementation would parse vertex formats and data
     ReadStructMembers(def, [&](const MemberDefinition& member) {
-        if (member.type == MemberType::Reference) ReadReference();
-        else if (member.type == MemberType::ArrayOfReferences) ReadArrayReference();
-        else if (member.type == MemberType::ReferenceToArray) ReadArrayReference();
-        else if (member.type == MemberType::Int32) ReadInt32();
-        else if (member.type == MemberType::UInt32) ReadUInt32();
+        if (member.name == "Vertices") {
+            // ReferenceToVariantArray - read struct reference and array reference
+            auto structRef = ReadStructReference();
+            auto arrayRef = ReadArrayReference();
+
+            if (arrayRef.IsValid() && arrayRef.size > 0 && structRef.IsValid()) {
+                // Get vertex format definition
+                auto vertexFormatDef = GetOrReadStructDefinition(structRef.offset);
+
+                // Detect vertex format from the struct definition
+                vertexData->format = VertexFormatDetector::DetectFormat(vertexFormatDef);
+
+                // Read vertices
+                SavePosition();
+                Seek(arrayRef.offset);
+
+                VertexReader vertexReader(this);
+                vertexData->vertices.reserve(arrayRef.size);
+
+                for (uint32_t i = 0; i < arrayRef.size; i++) {
+                    vertexData->vertices.push_back(vertexReader.ReadVertex(vertexData->format));
+                }
+
+                RestorePosition();
+            }
+        }
+        else {
+            // Skip other members
+            if (member.type == MemberType::Reference) ReadReference();
+            else if (member.type == MemberType::ArrayOfReferences) ReadArrayReference();
+            else if (member.type == MemberType::ReferenceToArray ||
+                     member.type == MemberType::ReferenceToVariantArray) {
+                ReadStructReference();
+                ReadArrayReference();
+            }
+            else if (member.type == MemberType::Int32) ReadInt32();
+            else if (member.type == MemberType::UInt32) ReadUInt32();
+        }
     });
 
     return vertexData;

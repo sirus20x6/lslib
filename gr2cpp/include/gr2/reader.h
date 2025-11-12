@@ -97,8 +97,7 @@ public:
     // Get file tag (game identifier)
     uint32_t GetTag() const { return header_.tag; }
 
-private:
-    // Reading primitives
+    // Reading primitives (public for vertex reader)
     void ReadBytes(uint8_t* buffer, size_t count);
     uint8_t ReadUInt8();
     int8_t ReadInt8();
@@ -108,6 +107,8 @@ private:
     int32_t ReadInt32();
     uint64_t ReadUInt64();
     float ReadFloat();
+
+private:
     std::string ReadStringDirect();
 
     // File structure reading

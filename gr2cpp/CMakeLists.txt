@@ -11,6 +11,7 @@ set(GR2_SOURCES
     src/format.cpp
     src/model.cpp
     src/reader.cpp
+    src/vertex_format.cpp
 )
 
 set(GR2_HEADERS
@@ -18,6 +19,7 @@ set(GR2_HEADERS
     include/gr2/format.h
     include/gr2/model.h
     include/gr2/reader.h
+    include/gr2/vertex_format.h
 )
 
 # Create library
